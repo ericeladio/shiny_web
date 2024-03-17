@@ -1,42 +1,59 @@
-# Code copied from https://shiny.posit.co/py/docs/overview.html
-import matplotlib.pyplot as plt
-import numpy as np
-from shiny import ui, render, App
+import seaborn as sns
+from faicons import icon_svg
 
-# Create some random data
-t = np.linspace(0, 2 * np.pi, 1024)
-data2d = np.sin(t)[:, np.newaxis] * np.cos(t)[np.newaxis, :]
+# Import data from shared.py
+from shared import app_dir, df
+from shiny import App, reactive, render, ui
 
-app_ui = ui.page_fixed(
-    ui.h2("Playing with colormaps"),
-    ui.markdown("""
-        This app is based on a [Matplotlib example][0] that displays 2D data
-        with a user-adjustable colormap. We use a range slider to set the data
-        range that is covered by the colormap.
+Countries = df["Country Name"]
+Countries = Countries.to_list()
+years = [ '2015', '2019', '2020', '2021', '2022']  
 
-        [0]: https://matplotlib.org/3.5.3/gallery/userdemo/colormap_interactive_adjustment.html
-    """),
-    ui.layout_sidebar(
-        ui.panel_sidebar(
-            ui.input_radio_buttons("cmap", "Colormap type",
-                dict(viridis="Perceptual", gist_heat="Sequential", RdYlBu="Diverging")
-            ),
-            ui.input_slider("range", "Color range", -1, 1, value=(-1, 1), step=0.05),
+app_ui = ui.page_sidebar(
+    ui.sidebar(
+        ui.input_switch("switch", "Select all", True),
+        ui.input_checkbox_group(
+            "countries",
+            "Countries",
+            Countries,
+            selected=Countries,
         ),
-        ui.panel_main(
-            ui.output_plot("plot")
-        )
-    )
+        title="Filter controls",
+    ),
+    ui.layout_columns(
+        ui.card(
+            ui.card_header("Summary statistics"),
+            ui.output_data_frame("summary_statistics"),
+            full_screen=True,
+        ),
+    ),
+    ui.include_css(app_dir / "styles.css"),
+    title="Inflation dashboard",
+    fillable=True,
 )
 
+
 def server(input, output, session):
-    @output
-    @render.plot
-    def plot():
-        fig, ax = plt.subplots()
-        im = ax.imshow(data2d, cmap=input.cmap(), vmin=input.range()[0], vmax=input.range()[1])
-        fig.colorbar(im, ax=ax)
-        return fig
+    @reactive.calc
+    def filtered_df():
+        filt_df = df[df["Country Name"].isin(input.countries())]
+        return filt_df
+
+    @reactive.effect
+    def _():
+        choices = Countries if input.switch() else []
+        ui.update_checkbox_group("countries",selected=choices)
+        swicth_name = "Select all" if input.switch() else "Deselect all"
+        ui.update_switch("switch",label=swicth_name)
+
+
+    @render.data_frame
+    def summary_statistics():
+        cols = [
+            "Country Name",
+            *years,
+        ]
+        return render.DataGrid(filtered_df()[cols], filters=False)
 
 
 app = App(app_ui, server)
